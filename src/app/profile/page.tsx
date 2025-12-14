@@ -1,17 +1,177 @@
-'use client';
+'use client'
 
-import { useState, useEffect } from 'react';
-import { useSearchParams } from 'next/navigation';
-import { Header } from '@/components/layout/Header';
-import { Star, MapPin, Phone, Mail, Calendar } from 'lucide-react';
+import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
+import { Header } from '@/components/layout/Header'
+import { useAuth } from '@/context/AuthContext'
+import { getUserProfile, updateUserProfile } from '@/lib/services/userService'
+import { ToastContainer } from '@/components/ui/Toast'
+import { useToast } from '@/hooks/useToast'
+import { LogOut, Edit2, Save, X, Loader, MapPin, Phone, Mail, Star } from 'lucide-react'
 
-export default function CustomerProfilePage() {
-  const searchParams = useSearchParams();
-  const userId = searchParams.get('userId');
-  const [activeTab, setActiveTab] = useState<'info' | 'bookings' | 'payments' | 'saved'>('info');
+interface UserProfile {
+  displayName: string
+  email: string
+  phoneNumber: string
+  address: string
+}
 
-  // Mock customers database
-  const customersDatabase: Record<string, any> = {
+export default function ProfilePage() {
+  const router = useRouter()
+  const { user, loading: authLoading, signOut } = useAuth()
+  const { toasts, removeToast, success, error } = useToast()
+  const [isEditing, setIsEditing] = useState(false)
+  const [isSaving, setIsSaving] = useState(false)
+  const [activeTab, setActiveTab] = useState<'bookings'>('bookings')
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(null)
+  const [profileLoading, setProfileLoading] = useState(true)
+  const [formData, setFormData] = useState({
+    displayName: '',
+    email: '',
+    phoneNumber: '',
+    address: '',
+  })
+
+  // Fetch user profile from Firestore
+  useEffect(() => {
+    if (user && !authLoading) {
+      setProfileLoading(true)
+      getUserProfile(user.uid)
+        .then(profile => {
+          if (profile) {
+            setUserProfile({
+              displayName: profile.displayName || '',
+              email: profile.email || '',
+              phoneNumber: profile.phoneNumber || '',
+              address: profile.address || '',
+            })
+            setFormData({
+              displayName: profile.displayName || '',
+              email: profile.email || '',
+              phoneNumber: profile.phoneNumber || '',
+              address: profile.address || '',
+            })
+          } else {
+            // If no profile found, use user auth data
+            setFormData({
+              displayName: user.displayName || '',
+              email: user.email || '',
+              phoneNumber: '',
+              address: '',
+            })
+          }
+        })
+        .catch(error => {
+          console.error('Error fetching profile:', error)
+          // Fallback to auth data
+          setFormData({
+            displayName: user.displayName || '',
+            email: user.email || '',
+            phoneNumber: '',
+            address: '',
+          })
+        })
+        .finally(() => setProfileLoading(false))
+    }
+  }, [user, authLoading])
+
+  // Redirect if not authenticated
+  useEffect(() => {
+    if (!authLoading && !user) {
+      router.push('/dang-nhap')
+    }
+  }, [user, authLoading, router])
+
+  if (authLoading || profileLoading) {
+    return (
+      <div className="flex min-h-screen w-full flex-col bg-gradient-to-br from-[#F9FAFB] to-[#F3F4F6]">
+        <Header showAuthButtons={false} />
+        <div className="flex-1 flex items-center justify-center">
+          <div className="text-center space-y-4">
+            <Loader className="animate-spin mx-auto" size={32} />
+            <p className="text-[#6B7280]">Đang tải...</p>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  if (!user) {
+    return null
+  }
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    const { name, value } = e.target
+    setFormData(prev => ({
+      ...prev,
+      [name]: value,
+    }))
+  }
+
+  const handleSave = async () => {
+    if (!user) return
+
+    try {
+      setIsSaving(true)
+      
+      // Validate required fields
+      if (!formData.displayName.trim()) {
+        error('Vui lòng nhập họ tên')
+        return
+      }
+      if (!formData.phoneNumber.trim()) {
+        error('Vui lòng nhập số điện thoại')
+        return
+      }
+      if (!formData.address.trim()) {
+        error('Vui lòng nhập địa chỉ')
+        return
+      }
+
+      // Save to Firestore
+      await updateUserProfile(user.uid, {
+        displayName: formData.displayName,
+        phoneNumber: formData.phoneNumber,
+        address: formData.address,
+      })
+
+      // Update local state
+      setUserProfile({
+        displayName: formData.displayName,
+        email: formData.email,
+        phoneNumber: formData.phoneNumber,
+        address: formData.address,
+      })
+
+      setIsEditing(false)
+      success('Cập nhật thông tin thành công!', 3000)
+    } catch (err) {
+      console.error('Error saving profile:', err)
+      error('Có lỗi xảy ra khi cập nhật thông tin. Vui lòng thử lại.', 3000)
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  const handleLogout = async () => {
+    try {
+      await signOut()
+      router.push('/')
+    } catch (error) {
+      console.error('Logout error:', error)
+    }
+  }
+
+  const getInitials = () => {
+    return (user.displayName || user.email || 'U')
+      .split(' ')
+      .map((n: string) => n[0])
+      .join('')
+      .toUpperCase()
+      .slice(0, 2)
+  }
+
+  const CUSTOMERS_DATABASE = {
     'customer-1': {
       id: '1',
       name: 'Nguyễn Văn A',
@@ -24,43 +184,19 @@ export default function CustomerProfilePage() {
       totalSpent: '15.600.000đ',
       verified: true,
     },
-    'customer-2': {
-      id: '2',
-      name: 'Trần Thị B',
-      email: 'tranthib@example.com',
-      phone: '0987654321',
-      location: 'Quận 1, TP.HCM',
-      avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Trần Thị B&scale=80',
-      joinDate: '2023-06-15',
-      totalTrips: 12,
-      totalSpent: '8.400.000đ',
-      verified: true,
-    },
-    'customer-3': {
-      id: '3',
-      name: 'Lê Minh C',
-      email: 'leminhc@example.com',
-      phone: '0976543210',
-      location: 'Quận 7, TP.HCM',
-      avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Lê Minh C&scale=80',
-      joinDate: '2023-08-20',
-      totalTrips: 8,
-      totalSpent: '5.200.000đ',
-      verified: true,
-    },
   };
 
-  // Default customer data
-  const customer = userId && customersDatabase[userId] ? customersDatabase[userId] : {
-    id: '1',
-    name: 'Trần Thị B',
-    email: 'customer@example.com',
-    phone: '0987654321',
-    location: 'Quận 1, TP.HCM',
-    avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=customer&scale=80',
-    joinDate: '2023-06-15',
-    totalTrips: 12,
-    totalSpent: '8.400.000đ',
+  // Use actual user profile data
+  const customer = {
+    id: user?.uid || '1',
+    name: formData.displayName || user?.displayName || 'User',
+    email: formData.email || user?.email || 'customer@example.com',
+    phone: formData.phoneNumber || '',
+    location: formData.address || 'Chưa cập nhật',
+    avatar: user?.photoURL || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user?.email || 'customer'}&scale=80`,
+    joinDate: new Date().toISOString().split('T')[0],
+    totalTrips: 0,
+    totalSpent: '0đ',
     verified: true,
   };
 
@@ -178,258 +314,238 @@ export default function CustomerProfilePage() {
   };
 
   return (
-    <div className="flex min-h-screen w-full flex-col bg-white">
-      <Header userType="customer" />
+    <div className="flex min-h-screen w-full flex-col bg-gradient-to-b from-[#F9FAFB] to-white">
+      <Header userType="customer" darkMode={false} />
+      <ToastContainer toasts={toasts} removeToast={removeToast} />
 
       <div className="flex-1 w-full">
-        <div className="mx-auto max-w-7xl px-4 md:px-8 py-8">
-          {/* Profile Header */}
-          <div className="bg-white rounded-lg border border-[#E5E7EB] p-6 md:p-8 mb-8">
-            <div className="flex flex-col md:flex-row gap-6">
-              {/* Avatar */}
-              <img
-                src={customer.avatar}
-                alt={customer.name}
-                className="w-32 h-32 rounded-full object-cover flex-shrink-0"
-              />
-
-              {/* Info */}
-              <div className="flex-1">
-                <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-4">
-                  <div>
-                    <h1 className="text-3xl font-bold text-[#1F2937] mb-2">{customer.name}</h1>
-                    {customer.verified && (
-                      <div className="inline-block bg-green-100 text-green-800 px-3 py-1 rounded-full text-sm font-medium">
-                        ✓ Đã xác minh
-                      </div>
-                    )}
-                  </div>
-                  <button className="bg-[#00A86B] text-white px-6 py-2 rounded-lg font-semibold hover:bg-[#008F5A]">
-                    Chỉnh sửa hồ sơ
-                  </button>
+        <div className="mx-auto max-w-7xl px-4 md:px-8 py-12">
+          <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+            {/* Left Sidebar - Profile Card */}
+            <div className="lg:col-span-1">
+              <div className="bg-white rounded-2xl border border-[#E5E7EB] p-8 sticky top-20 shadow-sm">
+                {/* Avatar */}
+                <div className="flex justify-center mb-6">
+                  <img
+                    src={customer.avatar}
+                    alt={customer.name}
+                    className="w-32 h-32 rounded-full object-cover border-4 border-[#00A86B] shadow-lg"
+                  />
                 </div>
 
-                {/* Stats */}
-                <div className="grid grid-cols-3 gap-4 pb-6 border-b border-[#E5E7EB]">
-                  <div>
-                    <p className="text-[#6B7280] text-sm mb-1">Tổng chuyến</p>
-                    <p className="text-2xl font-bold text-[#1F2937]">{customer.totalTrips}</p>
-                  </div>
-                  <div>
-                    <p className="text-[#6B7280] text-sm mb-1">Tổng chi tiêu</p>
-                    <p className="text-2xl font-bold text-[#00A86B]">{customer.totalSpent}</p>
-                  </div>
-                  <div>
-                    <p className="text-[#6B7280] text-sm mb-1">Thành viên từ</p>
-                    <p className="text-lg font-bold text-[#1F2937]">2023</p>
-                  </div>
-                </div>
+                {/* Name & Title */}
+                <h1 className="text-2xl font-bold text-[#1F2937] text-center mb-2">{customer.name}</h1>
+                <p className="text-[#6B7280] text-center text-sm mb-6">Khách hàng</p>
 
-                {/* Contact */}
-                <div className="space-y-2 mt-4">
-                  <div className="flex items-center gap-2 text-[#6B7280]">
-                    <MapPin size={16} />
-                    <span>{customer.location}</span>
+                {/* Badge */}
+                {customer.verified && (
+                  <div className="flex justify-center mb-6">
+                    <div className="inline-flex items-center gap-2 bg-green-50 border border-green-200 text-green-700 px-4 py-2 rounded-full text-sm font-semibold">
+                      <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                      Đã xác minh
+                    </div>
                   </div>
-                  <div className="flex items-center gap-2 text-[#6B7280]">
-                    <Phone size={16} />
-                    <span>{customer.phone}</span>
-                  </div>
-                  <div className="flex items-center gap-2 text-[#6B7280]">
-                    <Mail size={16} />
-                    <span>{customer.email}</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
+                )}
 
-          {/* Tabs */}
-          <div className="border-b border-[#E5E7EB] mb-8">
-            <div className="flex gap-8">
-              {(['info', 'bookings', 'payments', 'saved'] as const).map((tab) => (
-                <button
-                  key={tab}
-                  onClick={() => setActiveTab(tab)}
-                  className={`pb-4 font-semibold transition-colors ${
-                    activeTab === tab
-                      ? 'text-[#00A86B] border-b-2 border-[#00A86B]'
-                      : 'text-[#6B7280] hover:text-[#1F2937]'
-                  }`}
-                >
-                  {tab === 'info' && 'Thông tin'}
-                  {tab === 'bookings' && 'Chuyến đi'}
-                  {tab === 'payments' && 'Thanh toán'}
-                  {tab === 'saved' && 'Đã lưu'}
+                {/* Message Button */}
+                <button className="w-full bg-white text-black py-3 rounded-xl font-semibold hover:bg-[#F9FAFB] transition-colors mb-8 flex items-center justify-center gap-2 border border-[#E5E7EB]">
+                  <Mail size={18} />
+                  Nhắn tin
                 </button>
-              ))}
+
+                {/* Member Info */}
+                <div className="space-y-4 pt-6 border-t border-[#E5E7EB]">
+                  <div className="flex justify-between items-center">
+                    <span className="text-[#6B7280] text-sm">Thành viên từ</span>
+                    <span className="text-[#1F2937] font-semibold">Jan 2024</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-[#6B7280] text-sm">Hoạt động cuối</span>
+                    <span className="text-[#1F2937] font-semibold">2 giờ trước</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-[#6B7280] text-sm">Vai trò</span>
+                    <span className="text-[#1F2937] font-semibold">Khách hàng</span>
+                  </div>
+                </div>
+
+                {/* Edit Button */}
+                <button 
+                  onClick={() => setIsEditing(true)}
+                  className="w-full mt-8 bg-[#00A86B] text-white py-3 rounded-xl font-semibold hover:bg-[#008F5A] transition-colors flex items-center justify-center gap-2"
+                >
+                  <Edit2 size={18} />
+                  Chỉnh sửa hồ sơ
+                </button>
+              </div>
+            </div>
+
+            {/* Right Content - Stats & Activity */}
+            <div className="lg:col-span-3 space-y-6">
+              {/* Stats Cards */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                {/* Projects Card */}
+                <div className="bg-white rounded-2xl border border-[#E5E7EB] p-6 hover:shadow-md transition-shadow">
+                  <div className="flex items-start gap-4">
+                    <div className="bg-green-50 p-3 rounded-lg">
+                      <Star size={24} className="text-[#00A86B]" />
+                    </div>
+                    <div>
+                      <p className="text-[#1F2937] text-3xl font-bold">{customer.totalTrips}</p>
+                      <p className="text-[#6B7280] text-sm mt-1">Chuyến đặt</p>
+                      <p className="text-[#9CA3AF] text-xs">Hoàn tất</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Team Card */}
+                <div className="bg-white rounded-2xl border border-[#E5E7EB] p-6 hover:shadow-md transition-shadow">
+                  <div className="flex items-start gap-4">
+                    <div className="bg-green-50 p-3 rounded-lg">
+                      <Phone size={24} className="text-[#00A86B]" />
+                    </div>
+                    <div>
+                      <p className="text-[#1F2937] text-3xl font-bold">5.2k</p>
+                      <p className="text-[#6B7280] text-sm mt-1">Điểm tích lũy</p>
+                      <p className="text-[#9CA3AF] text-xs">Từ các chuyến</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Satisfaction Card */}
+                <div className="bg-white rounded-2xl border border-[#E5E7EB] p-6 hover:shadow-md transition-shadow">
+                  <div className="flex items-start gap-4">
+                    <div className="bg-green-50 p-3 rounded-lg">
+                      <Mail size={24} className="text-[#00A86B]" />
+                    </div>
+                    <div>
+                      <p className="text-[#1F2937] text-3xl font-bold">98%</p>
+                      <p className="text-[#6B7280] text-sm mt-1">Đánh giá tốt</p>
+                      <p className="text-[#9CA3AF] text-xs">Từ chủ xe</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Recent Activity */}
+              <div className="bg-white rounded-2xl border border-[#E5E7EB] p-8 shadow-sm">
+                <h2 className="text-2xl font-bold text-[#1F2937] mb-8">Hoạt động gần đây</h2>
+                
+                <div className="space-y-4">
+                  {bookings.slice(0, 3).map((booking) => (
+                    <div key={booking.id} className="flex items-start gap-4 pb-4 border-b border-[#E5E7EB] last:border-0 last:pb-0">
+                      <Star size={20} className="text-[#00A86B] flex-shrink-0 mt-1" />
+                      <div className="flex-1">
+                        <p className="text-[#1F2937] font-semibold">Đặt xe "{booking.vehicle}"</p>
+                        <p className="text-[#6B7280] text-sm mt-1">{booking.startDate} đến {booking.endDate}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
             </div>
           </div>
 
-          {/* Tab Content */}
-          {activeTab === 'info' && (
-            <div className="grid md:grid-cols-2 gap-8">
-              <div className="bg-white rounded-lg border border-[#E5E7EB] p-6">
-                <h3 className="text-xl font-semibold text-[#1F2937] mb-4">Thông tin cá nhân</h3>
-                <div className="space-y-4">
-                  <div>
-                    <label className="text-sm text-[#6B7280]">Họ tên</label>
-                    <p className="font-semibold text-[#1F2937]">{customer.name}</p>
-                  </div>
-                  <div>
-                    <label className="text-sm text-[#6B7280]">Email</label>
-                    <p className="font-semibold text-[#1F2937]">{customer.email}</p>
-                  </div>
-                  <div>
-                    <label className="text-sm text-[#6B7280]">Số điện thoại</label>
-                    <p className="font-semibold text-[#1F2937]">{customer.phone}</p>
-                  </div>
-                  <div>
-                    <label className="text-sm text-[#6B7280]">Địa chỉ</label>
-                    <p className="font-semibold text-[#1F2937]">{customer.location}</p>
-                  </div>
-                  <button className="w-full bg-[#00A86B] text-white py-2 rounded-lg font-semibold hover:bg-[#008F5A]">
-                    Chỉnh sửa thông tin
-                  </button>
-                </div>
-              </div>
 
-              <div className="bg-white rounded-lg border border-[#E5E7EB] p-6">
-                <h3 className="text-xl font-semibold text-[#1F2937] mb-4">Bảo mật</h3>
-                <div className="space-y-4">
-                  <button className="w-full text-left p-3 border border-[#E5E7EB] rounded-lg hover:bg-[#F9FAFB]">
-                    <p className="font-semibold text-[#1F2937]">Đổi mật khẩu</p>
-                    <p className="text-sm text-[#6B7280]">Cập nhật mật khẩu của bạn</p>
-                  </button>
-                  <button className="w-full text-left p-3 border border-[#E5E7EB] rounded-lg hover:bg-[#F9FAFB]">
-                    <p className="font-semibold text-[#1F2937]">Xác minh tài khoản</p>
-                    <p className="text-sm text-[#6B7280]">Xác minh danh tính của bạn</p>
-                  </button>
-                  <button className="w-full text-left p-3 border border-[#E5E7EB] rounded-lg hover:bg-[#F9FAFB]">
-                    <p className="font-semibold text-[#1F2937]">Phương thức thanh toán</p>
-                    <p className="text-sm text-[#6B7280]">Quản lý thẻ và ví điện tử</p>
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {activeTab === 'bookings' && (
-            <div>
-              <h3 className="text-2xl font-semibold text-[#1F2937] mb-6">Chuyến đi của tôi ({bookings.length})</h3>
-              <div className="space-y-4">
-                {bookings.map((booking) => (
-                  <div key={booking.id} className="rounded-lg border border-[#E5E7EB] p-4 md:p-6">
-                    <div className="grid md:grid-cols-5 gap-4 items-center">
-                      <div>
-                        <p className="text-sm text-[#6B7280] mb-1">Xe</p>
-                        <p className="font-semibold text-[#1F2937]">{booking.vehicle}</p>
-                        <p className="text-xs text-[#6B7280]">Chủ: {booking.owner}</p>
-                      </div>
-                      <div>
-                        <p className="text-sm text-[#6B7280] mb-1">Ngày</p>
-                        <p className="font-semibold text-[#1F2937] text-sm">{booking.startDate} đến {booking.endDate}</p>
-                      </div>
-                      <div>
-                        <p className="text-sm text-[#6B7280] mb-1">Trạng thái</p>
-                        <span className={`inline-block px-3 py-1 rounded-full text-xs font-semibold ${getStatusColor(booking.status)}`}>
-                          {getStatusText(booking.status)}
-                        </span>
-                      </div>
-                      <div>
-                        <p className="text-sm text-[#6B7280] mb-1">Tổng tiền</p>
-                        <p className="font-bold text-[#00A86B]">{booking.totalPrice}</p>
-                      </div>
-                      <div className="text-right">
-                        {booking.rating ? (
-                          <div className="flex">
-                            {[...Array(5)].map((_, i) => (
-                              <Star
-                                key={i}
-                                size={14}
-                                className={i < booking.rating! ? 'fill-yellow-400 text-yellow-400' : 'text-[#D1D5DB]'}
-                              />
-                            ))}
-                          </div>
-                        ) : (
-                          <button className="text-[#00A86B] font-semibold text-sm hover:underline">
-                            Đánh giá
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {activeTab === 'payments' && (
-            <div>
-              <h3 className="text-2xl font-semibold text-[#1F2937] mb-6">Lịch sử thanh toán ({payments.length})</h3>
-              <div className="space-y-4">
-                {payments.map((payment) => (
-                  <div key={payment.id} className="rounded-lg border border-[#E5E7EB] p-4 md:p-6">
-                    <div className="grid md:grid-cols-5 gap-4 items-center">
-                      <div>
-                        <p className="text-sm text-[#6B7280] mb-1">Ngày</p>
-                        <p className="font-semibold text-[#1F2937]">{payment.date}</p>
-                      </div>
-                      <div>
-                        <p className="text-sm text-[#6B7280] mb-1">Xe</p>
-                        <p className="font-semibold text-[#1F2937]">{payment.vehicle}</p>
-                      </div>
-                      <div>
-                        <p className="text-sm text-[#6B7280] mb-1">Phương thức</p>
-                        <p className="font-semibold text-[#1F2937]">{payment.method}</p>
-                      </div>
-                      <div>
-                        <p className="text-sm text-[#6B7280] mb-1">Trạng thái</p>
-                        <span className={`inline-block px-3 py-1 rounded-full text-sm font-semibold ${getStatusColor(payment.status)}`}>
-                          {getStatusText(payment.status)}
-                        </span>
-                      </div>
-                      <div className="text-right">
-                        <p className="text-lg font-bold text-[#00A86B]">{payment.amount}</p>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {activeTab === 'saved' && (
-            <div>
-              <h3 className="text-2xl font-semibold text-[#1F2937] mb-6">Xe đã lưu ({savedVehicles.length})</h3>
-              <div className="grid md:grid-cols-3 gap-6">
-                {savedVehicles.map((vehicle) => (
-                  <div key={vehicle.id} className="rounded-lg border border-[#E5E7EB] overflow-hidden hover:shadow-lg transition-shadow">
-                    <img src={vehicle.image} alt={vehicle.name} className="w-full h-40 object-cover" />
-                    <div className="p-4">
-                      <h4 className="font-semibold text-[#1F2937] mb-1">{vehicle.name}</h4>
-                      <p className="text-sm text-[#6B7280] mb-2">Chủ: {vehicle.owner}</p>
-                      <p className="text-[#00A86B] font-bold mb-2">{vehicle.price}</p>
-                      <div className="flex items-center gap-2 text-sm text-[#6B7280] mb-4">
-                        <Star size={14} className="fill-yellow-400 text-yellow-400" />
-                        <span className="font-semibold">{vehicle.rating}</span>
-                      </div>
-                      <div className="flex gap-2">
-                        <button className="flex-1 border border-[#E5E7EB] text-[#1F2937] py-2 rounded-lg hover:bg-[#F9FAFB]">
-                          Xem
-                        </button>
-                        <button className="flex-1 bg-[#00A86B] text-white py-2 rounded-lg hover:bg-[#008F5A]">
-                          Đặt xe
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
         </div>
       </div>
+
+      {/* Edit Modal */}
+      {isEditing && (
+        <>
+          {/* Backdrop */}
+          <div
+            className="fixed inset-0 bg-black/70 z-40 backdrop-blur-sm transition-opacity duration-200 animate-in fade-in"
+            onClick={() => setIsEditing(false)}
+          />
+
+          {/* Modal */}
+          <div className="fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-white rounded-2xl border border-[#E5E7EB] shadow-2xl z-50 w-full max-w-md max-h-[90vh] overflow-y-auto animate-in zoom-in-95 duration-200">
+            {/* Header */}
+            <div className="flex items-center justify-between p-6 border-b border-[#E5E7EB]">
+              <h2 className="text-lg font-semibold text-[#1F2937]">Chỉnh sửa hồ sơ</h2>
+              <button
+                onClick={() => setIsEditing(false)}
+                className="text-[#6B7280] hover:text-[#1F2937] hover:bg-[#F9FAFB] p-1 rounded-lg transition-colors duration-200"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Content */}
+            <div className="p-6">
+              <form onSubmit={(e) => { e.preventDefault(); handleSave(); }} className="space-y-4">
+                {/* Display Name */}
+                <div>
+                  <label htmlFor="displayName" className="block text-sm font-medium text-[#1F2937] mb-2">
+                    Họ và tên
+                  </label>
+                  <input
+                    id="displayName"
+                    type="text"
+                    name="displayName"
+                    value={formData.displayName}
+                    onChange={handleInputChange}
+                    className="w-full px-4 py-2 border border-[#E5E7EB] bg-white rounded-lg text-[#1F2937] focus:outline-none focus:ring-2 focus:ring-[#00A86B] focus:border-transparent"
+                    required
+                  />
+                </div>
+
+                {/* Phone Number */}
+                <div>
+                  <label htmlFor="phoneNumber" className="block text-sm font-medium text-[#1F2937] mb-2">
+                    Số điện thoại
+                  </label>
+                  <input
+                    id="phoneNumber"
+                    type="tel"
+                    name="phoneNumber"
+                    value={formData.phoneNumber}
+                    onChange={handleInputChange}
+                    className="w-full px-4 py-2 border border-[#E5E7EB] bg-white rounded-lg text-[#1F2937] focus:outline-none focus:ring-2 focus:ring-[#00A86B] focus:border-transparent"
+                    required
+                  />
+                </div>
+
+                {/* Address */}
+                <div>
+                  <label htmlFor="address" className="block text-sm font-medium text-[#1F2937] mb-2">
+                    Địa chỉ
+                  </label>
+                  <textarea
+                    id="address"
+                    name="address"
+                    value={formData.address}
+                    onChange={handleInputChange}
+                    rows={3}
+                    className="w-full px-4 py-2 border border-[#E5E7EB] bg-white rounded-lg text-[#1F2937] focus:outline-none focus:ring-2 focus:ring-[#00A86B] focus:border-transparent"
+                    required
+                  />
+                </div>
+
+                {/* Buttons */}
+                <div className="flex gap-3 mt-6">
+                  <button
+                    type="button"
+                    onClick={() => setIsEditing(false)}
+                    className="flex-1 px-4 py-2 border border-[#E5E7EB] text-[#1F2937] rounded-lg font-semibold hover:bg-[#F9FAFB] transition-colors"
+                  >
+                    Hủy
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isSaving}
+                    className="flex-1 bg-[#00A86B] text-white px-4 py-2 rounded-lg font-semibold hover:bg-[#008F5A] disabled:opacity-50 flex items-center justify-center gap-2 transition-colors"
+                  >
+                    {isSaving && <Loader size={16} className="animate-spin" />}
+                    {isSaving ? 'Đang lưu...' : 'Lưu'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }

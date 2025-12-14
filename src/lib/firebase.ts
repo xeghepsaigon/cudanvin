@@ -1,11 +1,8 @@
 // Firebase Configuration
-// TODO: Replace with your actual Firebase config
-// Get values from: https://console.firebase.google.com/project/YOUR_PROJECT/settings/general
-
-import type { FirebaseApp } from 'firebase/app'
-import type { Auth } from 'firebase/auth'
-import type { Firestore } from 'firebase/firestore'
-import type { FirebaseStorage } from 'firebase/storage'
+import { initializeApp } from 'firebase/app'
+import { getAuth, Auth } from 'firebase/auth'
+import { getFirestore, Firestore } from 'firebase/firestore'
+import { getStorage, FirebaseStorage } from 'firebase/storage'
 
 export const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY || '',
@@ -16,25 +13,25 @@ export const firebaseConfig = {
   appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID || ''
 }
 
-// Initialize Firebase when config is provided
-export let app: FirebaseApp | null = null
-export let auth: Auth | null = null
-export let db: Firestore | null = null
-export let storage: FirebaseStorage | null = null
+// Initialize Firebase
+let app: any = null
+let auth: Auth | null = null
+let db: Firestore | null = null
+let storage: FirebaseStorage | null = null
 
-if (firebaseConfig.projectId) {
-  // Dynamic import to avoid build errors if Firebase not installed
-  try {
-    const { initializeApp } = require('firebase/app')
-    const { getAuth } = require('firebase/auth')
-    const { getFirestore } = require('firebase/firestore')
-    const { getStorage } = require('firebase/storage')
-
+try {
+  if (firebaseConfig.projectId) {
     app = initializeApp(firebaseConfig)
     auth = getAuth(app)
     db = getFirestore(app)
     storage = getStorage(app)
-  } catch (error) {
-    console.warn('Firebase not initialized. Install firebase package and set environment variables.')
+    console.log('✅ Firebase initialized successfully')
+  } else {
+    console.warn('⚠️ Firebase config is missing. Check .env.local')
   }
+} catch (error) {
+  console.error('❌ Firebase initialization error:', error)
 }
+
+export { auth, db, storage }
+export default app
